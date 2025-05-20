@@ -12,7 +12,7 @@ def list_gke_clusters(project_id: str, location: str = "-") -> dict[str, Any]:
     """List all GKE clusters accessible with current credentials
 
     Arguments:
-        project_id (str): The Google Cloud project ID to fetch metrics from.
+        project_id (str): The Google Cloud project ID to fetch GKE clusters from.
         location (str, optional): The Google Cloud location. Defaults to all locations ("-").
 
     Returns:
