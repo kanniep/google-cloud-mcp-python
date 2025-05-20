@@ -1,0 +1,91 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+.eggs/
+*.egg-info/
+.eggs
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+.uv/
+pip-wheel-metadata/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage / test output
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# Cython debug symbols
+cython_debug/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code settings
+.vscode/
+.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Editor swap and backup files
+*~
+.*.swp
+.*.swo
+*.bak
+
+# Local credentials and secrets (never commit!)
+.env
+.env.*
+.secrets
+credentials.json
+
+# Other common cloud and MCP/Inspector outputs
+.mcp/
+inspector.cache/
+.mcp-inspector/
+mcp.json
+
+# System files
+Thumbs.db
+desktop.ini
+
+# Sun Grid Engine output files
+*.o[0-9]*
+*.e[0-9]*
