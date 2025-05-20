@@ -4,4 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["google-cloud-monitoring>=2.27.1", "mcp[cli]>=1.9.0"]
+dependencies = [
+    "google-cloud-container>=2.56.1",
+    "google-cloud-monitoring>=2.27.1",
+    "mcp[cli]>=1.9.0",
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
