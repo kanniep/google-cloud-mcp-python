@@ -52,4 +52,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 ENTRYPOINT ["python", "src/main.py"]
 
-EXPOSE 8080
+EXPOSE 8000
