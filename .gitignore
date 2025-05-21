@@ -51,6 +51,7 @@ cython_debug/
 .ipynb_checkpoints
 
 # VS Code settings
+.ruff_cache/
 .vscode/
 .code-workspace
 
