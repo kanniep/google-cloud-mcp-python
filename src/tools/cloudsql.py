@@ -267,61 +267,21 @@ def get_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]
         )
         raise
 
-@mcp.tool()
-def wait_cloudsql_operation(
+def _wait_cloudsql_operation_single(
     project_id: str,
     operation_id: str,
     poll_interval: int = 2,
-    timeout: int = 300,
+    timeout: int = 60,
+    logger_obj=None,
 ) -> dict[str, Any]:
     """
-    Polls a Cloud SQL Admin API operation until it is DONE or times out.
-
-    Use this tool to wait for completion of asynchronous Cloud SQL operations
-    (e.g., start/stop/patch/create/delete) by operation ID. Returns the final
-    operation resource state, including errors if any.
-
-    Arguments:
-        project_id (str): Google Cloud project ID where the operation resides.
-        operation_id (str): The GCP operation ID returned by an async request.
-        poll_interval (int, optional): Seconds between polls (default: 2, min: 1, max: reasonable).
-            - Make this larger for slow ops (reduce API calls); smaller for responsiveness.
-        timeout (int, optional): Maximum seconds to wait before giving up (default: 300).
-            - Adjust for fast/slow environments (quick tests: reduce; production: raise for safety).
-
-    Returns:
-        dict: The final state of the operation resource as returned by the API.
-            - If successful, {"status": "DONE", ...}.
-            - If timeout/error, includes error details.
-
-    Quick Reference:
-        # Wait up to default 5 minutes, 2s intervals (recommended default)
-        result = wait_cloudsql_operation("ccoe-lab", "opid1234")
-
-        # Wait up to 10 minutes, 5s intervals (heavy/slow ops)
-        result = wait_cloudsql_operation("ccoe-lab", "opid1234", poll_interval=5, timeout=600)
-
-        # For fast test/dev fail-fast: 60s total, 1s interval
-        result = wait_cloudsql_operation("ccoe-lab", "opid1234", poll_interval=1, timeout=60)
-        # Inspect result['status'] (should be "DONE" for successful completion)
-
-    Notes:
-        - poll_interval and timeout are fully configurable for any automation needs.
-        - See API: https://cloud.google.com/sql/docs/mysql/admin-api/rest/v1beta4/operations/get
-        - Operation resource format: https://cloud.google.com/sql/docs/mysql/admin-api/rest/v1beta4/operations
-        - Useful for chaining steps in automation and reliable handoffs in LLM flows.
-
-    Raises:
-        Exception if API polling fails, operation returns error, or times out.
+    Helper: Poll a Cloud SQL operation for a short period.
+    Returns the most recent operation resource (status: DONE, or after timeout).
     """
-    logger.info(
-        "[wait_cloudsql_operation] Waiting for CloudSQL operation '%s' in project '%s' "
-        "(interval=%ds, timeout=%ds)", operation_id, project_id, poll_interval, timeout
-    )
+    log = logger_obj or logger
     if build is None:
-        logger.error("google-api-python-client package not installed")
+        log.error("google-api-python-client package not installed")
         raise ImportError("google-api-python-client package not installed")
-
     service = build("sqladmin", "v1beta4", cache_discovery=False)
     start_time = time.time()
     while True:
@@ -331,44 +291,107 @@ def wait_cloudsql_operation(
             ).execute()
             status = operation.get("status")
             if status == "DONE":
-                logger.info("[wait_cloudsql_operation] Operation '%s' is DONE.", operation_id)
-                # Attach CloudSQL instance status if available
-                target_resource = operation.get("targetId") or operation.get("targetLink")
-                instance_details = None
-                instance_name = None
-                if "instance" in operation.get("operationType", "").lower() or (target_resource and isinstance(target_resource, str)):
-                    # Try to extract instance name (from resource or metadata)
-                    if "instance" in operation:
-                        instance_name = operation.get("instance")
-                    elif target_resource and isinstance(target_resource, str):
-                        instance_name = target_resource.split("/")[-1]
-                    if instance_name:
-                        try:
-                            instance_details = service.instances().get(project=project_id, instance=instance_name).execute()
-                        except Exception as exc:
-                            logger.warning("[wait_cloudsql_operation] Could not fetch instance state '%s': %s", instance_name, str(exc))
-                if instance_details:
-                    operation["instance_details"] = instance_details
-                # Attach error details if present
-                if "error" in operation and operation["error"]:
-                    logger.error("[wait_cloudsql_operation] Operation '%s' finished with error: %s", operation_id, operation["error"])
+                log.info("[_wait_cloudsql_operation_single] Operation '%s' is DONE.", operation_id)
                 return operation
             if (time.time() - start_time) > timeout:
-                logger.error("[wait_cloudsql_operation] Timed out waiting for operation '%s' (timeout=%ds)", operation_id, timeout)
-                operation["error"] = {
-                    "message": f"Timed out after {timeout} seconds.",
-                    "code": "OPERATION_TIMEOUT"
-                }
+                log.warning("[_wait_cloudsql_operation_single] Timeout reached (%ss) for operation '%s'.", timeout, operation_id)
                 return operation
-            # More informative progress logging
-            logger.info("[wait_cloudsql_operation] Operation '%s' status: %s (elapsed=%.1fs)", operation_id, status, (time.time() - start_time))
             time.sleep(poll_interval)
         except Exception as exc:
-            logger.exception(
-                "[wait_cloudsql_operation] Error polling operation '%s' (project '%s'): %s",
+            log.error(
+                "[_wait_cloudsql_operation_single] Error polling operation '%s' (project '%s'): %s",
                 operation_id, project_id, str(exc)
             )
             raise
+
+@mcp.tool()
+def wait_cloudsql_operation(
+    project_id: str,
+    operation_id: str,
+    poll_interval: int = 2,
+    timeout: int = 300,
+) -> dict[str, Any]:
+    """
+    Robustly poll a Cloud SQL Admin API operation until DONE using short waits,
+    with retries to overcome context/request timeouts.
+
+    Intended for use in automation or agent environments where a server or platform
+    may enforce hard limits on request duration.
+
+    Arguments:
+        project_id (str): Google Cloud project ID where the operation resides.
+        operation_id (str): The GCP operation ID returned by an async request.
+        poll_interval (int, optional): Seconds between polls (default: 2).
+        timeout (int, optional): Maximum seconds to wait in total (default: 300).
+
+    Returns:
+        dict: The final operation resource as returned by the API, with attached instance state.
+            - If successful, {"status": "DONE", ...} and "instance_details" key if found.
+            - If timeout/error, includes error details.
+
+    Quick Reference:
+        # Wait up to 5 min using repeated 60s checks:
+        result = wait_cloudsql_operation("project", "opid", timeout=300)
+
+    Notes:
+        - Designed to safely work across platforms with strict per-request limits.
+        - Will always check for "DONE", and attaches relevant instance information.
+    """
+    logger.info(
+        "[wait_cloudsql_operation] Robust poll for operation '%s' (project '%s'), interval=%s, timeout=%s",
+        operation_id, project_id, poll_interval, timeout
+    )
+    if build is None:
+        logger.error("google-api-python-client package not installed")
+        raise ImportError("google-api-python-client package not installed")
+    per_call_timeout = min(60, timeout)
+    elapsed = 0
+    final_operation = None
+
+    while elapsed < timeout:
+        remaining = timeout - elapsed
+        single_wait = min(per_call_timeout, remaining)
+        operation = _wait_cloudsql_operation_single(
+            project_id=project_id,
+            operation_id=operation_id,
+            poll_interval=poll_interval,
+            timeout=single_wait,
+            logger_obj=logger,
+        )
+        status = operation.get("status")
+        if status == "DONE":
+            logger.info("[wait_cloudsql_operation] Operation '%s' is DONE.", operation_id)
+            # Attach instance details if possible
+            service = build("sqladmin", "v1beta4", cache_discovery=False)
+            target_resource = operation.get("targetId") or operation.get("targetLink")
+            instance_details = None
+            instance_name = None
+            if "instance" in (operation.get("operationType", "")).lower() or (target_resource and isinstance(target_resource, str)):
+                if "instance" in operation:
+                    instance_name = operation.get("instance")
+                elif target_resource and isinstance(target_resource, str):
+                    instance_name = target_resource.split("/")[-1]
+                if instance_name:
+                    try:
+                        instance_details = service.instances().get(project=project_id, instance=instance_name).execute()
+                    except Exception as exc:
+                        logger.warning(
+                            "[wait_cloudsql_operation] Could not fetch instance state '%s': %s",
+                            instance_name, str(exc)
+                        )
+            if instance_details:
+                operation["instance_details"] = instance_details
+            return operation
+        elapsed += single_wait
+        final_operation = operation
+        logger.info("[wait_cloudsql_operation] Partial wait: operation '%s' not done after %ss (total elapsed: %ss)", operation_id, single_wait, elapsed)
+    # Attach error info if completely timed out
+    if final_operation is not None:
+        final_operation["error"] = {
+            "message": f"Timed out after {timeout} seconds.",
+            "code": "OPERATION_TIMEOUT"
+        }
+    return final_operation or {"error": {"message": "Unknown error waiting for operation", "code": "UNKNOWN"}}
 
 @mcp.tool()
 def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any]:
