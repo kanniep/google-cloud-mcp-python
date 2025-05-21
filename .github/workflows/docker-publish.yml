@@ -32,12 +32,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (multi-platform)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ steps.vars.outputs.image_name }}:latest
             ${{ steps.vars.outputs.image_name }}:${{ steps.vars.outputs.version }}
