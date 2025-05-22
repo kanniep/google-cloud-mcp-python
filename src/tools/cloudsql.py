@@ -8,6 +8,7 @@ from datetime import datetime
 
 logger = get_logger(__name__)
 
+
 @dataclass
 class GcpCloudSQLItem:
     name: str
@@ -53,7 +54,7 @@ class GcpCloudSQLItem:
         def _get_dt(dt_str):
             if not dt_str:
                 return None
-            if dt_str.endswith('Z'):
+            if dt_str.endswith("Z"):
                 dt_str = dt_str[:-1]
             for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
                 try:
@@ -67,8 +68,12 @@ class GcpCloudSQLItem:
 
         item = GcpCloudSQLItem(
             name=instance.get("name", ""),
-            database_type=__get_db_type(version_splited[0]) if version_splited and version_splited[0] else "",
-            database_version=".".join(version_splited[1:]) if len(version_splited) > 1 else "",
+            database_type=__get_db_type(version_splited[0])
+            if version_splited and version_splited[0]
+            else "",
+            database_version=".".join(version_splited[1:])
+            if len(version_splited) > 1
+            else "",
             status=__get_status(instance),
             zone=instance.get("gceZone", ""),
             is_replica=instance.get("instanceType") == "READ_REPLICA_INSTANCE",
@@ -76,7 +81,8 @@ class GcpCloudSQLItem:
             is_ssl_enabled=settings.get("ipConfiguration", {}).get(
                 "sslMode",
                 "ALLOW_UNENCRYPTED_AND_ENCRYPTED",
-            ) == "TRUSTED_CLIENT_CERTIFICATE_REQUIRED",
+            )
+            == "TRUSTED_CLIENT_CERTIFICATE_REQUIRED",
             disk_size=int(settings.get("dataDiskSizeGb", 0)),
             disk_type=settings.get("dataDiskType", ""),
             machine_type=settings.get("tier", ""),
@@ -107,10 +113,12 @@ class GcpCloudSQLItem:
                 d[k] = v.isoformat()
         return d
 
+
 try:
     from googleapiclient.discovery import build
 except ImportError:
     build = None
+
 
 @mcp.tool()
 def start_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]:
@@ -142,27 +150,51 @@ def start_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, An
     Raises:
         Exception if the API call fails, authentication error, or instance does not exist.
     """
-    logger.info("Requesting start for CloudSQL instance '%s' in project '%s'.", instance_name, project_id)
+    logger.info(
+        "Requesting start for CloudSQL instance '%s' in project '%s'.",
+        instance_name,
+        project_id,
+    )
     if build is None:
         logger.error("google-api-python-client package not installed")
         raise ImportError("google-api-python-client package not installed")
     try:
         service = build("sqladmin", "v1beta4", cache_discovery=False)
         # Fetch the current instance config
-        instance = service.instances().get(project=project_id, instance=instance_name).execute()
+        instance = (
+            service.instances()
+            .get(project=project_id, instance=instance_name)
+            .execute()
+        )
         # Set activationPolicy to ALWAYS to start
-        instance['settings']['activationPolicy'] = 'ALWAYS'
+        instance["settings"]["activationPolicy"] = "ALWAYS"
         # Use patch to update only the activationPolicy setting
-        patch_body = {
-            "settings": {"activationPolicy": "ALWAYS"}
-        }
-        response = service.instances().patch(project=project_id, instance=instance_name, body=patch_body).execute()
+        patch_body = {"settings": {"activationPolicy": "ALWAYS"}}
+        response = (
+            service.instances()
+            .patch(project=project_id, instance=instance_name, body=patch_body)
+            .execute()
+        )
         operation_id = response.get("name", "")
-        logger.info("Start (patch) requested for instance '%s'. Operation ID: %s", instance_name, operation_id)
-        return {"status": "STARTING", "instance": instance_name, "operation": operation_id}
+        logger.info(
+            "Start (patch) requested for instance '%s'. Operation ID: %s",
+            instance_name,
+            operation_id,
+        )
+        return {
+            "status": "STARTING",
+            "instance": instance_name,
+            "operation": operation_id,
+        }
     except Exception as exc:
-        logger.exception("Failed to start CloudSQL instance '%s' for project '%s' via patch: %s", instance_name, project_id, str(exc))
+        logger.exception(
+            "Failed to start CloudSQL instance '%s' for project '%s' via patch: %s",
+            instance_name,
+            project_id,
+            str(exc),
+        )
         raise
+
 
 @mcp.tool()
 def stop_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]:
@@ -195,27 +227,51 @@ def stop_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any
     Raises:
         Exception if the API call fails, authentication error, or instance does not exist.
     """
-    logger.info("Requesting stop for CloudSQL instance '%s' in project '%s'.", instance_name, project_id)
+    logger.info(
+        "Requesting stop for CloudSQL instance '%s' in project '%s'.",
+        instance_name,
+        project_id,
+    )
     if build is None:
         logger.error("google-api-python-client package not installed")
         raise ImportError("google-api-python-client package not installed")
     try:
         service = build("sqladmin", "v1beta4", cache_discovery=False)
         # Fetch the current instance config
-        instance = service.instances().get(project=project_id, instance=instance_name).execute()
+        instance = (
+            service.instances()
+            .get(project=project_id, instance=instance_name)
+            .execute()
+        )
         # Set activationPolicy to NEVER to stop
-        instance['settings']['activationPolicy'] = 'NEVER'
+        instance["settings"]["activationPolicy"] = "NEVER"
         # Use patch to update only the activationPolicy setting
-        patch_body = {
-            "settings": {"activationPolicy": "NEVER"}
-        }
-        response = service.instances().patch(project=project_id, instance=instance_name, body=patch_body).execute()
+        patch_body = {"settings": {"activationPolicy": "NEVER"}}
+        response = (
+            service.instances()
+            .patch(project=project_id, instance=instance_name, body=patch_body)
+            .execute()
+        )
         operation_id = response.get("name", "")
-        logger.info("Stop (patch) requested for instance '%s'. Operation ID: %s", instance_name, operation_id)
-        return {"status": "STOPPING", "instance": instance_name, "operation": operation_id}
+        logger.info(
+            "Stop (patch) requested for instance '%s'. Operation ID: %s",
+            instance_name,
+            operation_id,
+        )
+        return {
+            "status": "STOPPING",
+            "instance": instance_name,
+            "operation": operation_id,
+        }
     except Exception as exc:
-        logger.exception("Failed to stop CloudSQL instance '%s' for project '%s' via patch: %s", instance_name, project_id, str(exc))
+        logger.exception(
+            "Failed to stop CloudSQL instance '%s' for project '%s' via patch: %s",
+            instance_name,
+            project_id,
+            str(exc),
+        )
         raise
+
 
 @mcp.tool()
 def get_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]:
@@ -255,7 +311,9 @@ def get_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]
         service = build("sqladmin", "v1beta4", cache_discovery=False)
         request = service.instances().get(project=project_id, instance=instance_name)
         response = request.execute()
-        item = GcpCloudSQLItem.build(app_name=project_id, project_id=project_id, instance=response)
+        item = GcpCloudSQLItem.build(
+            app_name=project_id, project_id=project_id, instance=response
+        )
         logger.info("Fetched CloudSQL instance: '%s'.", instance_name)
         return item.asdict()
     except Exception as exc:
@@ -266,6 +324,7 @@ def get_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]
             str(exc),
         )
         raise
+
 
 def _wait_cloudsql_operation_single(
     project_id: str,
@@ -286,23 +345,35 @@ def _wait_cloudsql_operation_single(
     start_time = time.time()
     while True:
         try:
-            operation = service.operations().get(
-                project=project_id, operation=operation_id
-            ).execute()
+            operation = (
+                service.operations()
+                .get(project=project_id, operation=operation_id)
+                .execute()
+            )
             status = operation.get("status")
             if status == "DONE":
-                log.info("[_wait_cloudsql_operation_single] Operation '%s' is DONE.", operation_id)
+                log.info(
+                    "[_wait_cloudsql_operation_single] Operation '%s' is DONE.",
+                    operation_id,
+                )
                 return operation
             if (time.time() - start_time) > timeout:
-                log.warning("[_wait_cloudsql_operation_single] Timeout reached (%ss) for operation '%s'.", timeout, operation_id)
+                log.warning(
+                    "[_wait_cloudsql_operation_single] Timeout reached (%ss) for operation '%s'.",
+                    timeout,
+                    operation_id,
+                )
                 return operation
             time.sleep(poll_interval)
         except Exception as exc:
             log.error(
                 "[_wait_cloudsql_operation_single] Error polling operation '%s' (project '%s'): %s",
-                operation_id, project_id, str(exc)
+                operation_id,
+                project_id,
+                str(exc),
             )
             raise
+
 
 @mcp.tool()
 def wait_cloudsql_operation(
@@ -339,7 +410,10 @@ def wait_cloudsql_operation(
     """
     logger.info(
         "[wait_cloudsql_operation] Robust poll for operation '%s' (project '%s'), interval=%s, timeout=%s",
-        operation_id, project_id, poll_interval, timeout
+        operation_id,
+        project_id,
+        poll_interval,
+        timeout,
     )
     if build is None:
         logger.error("google-api-python-client package not installed")
@@ -360,38 +434,55 @@ def wait_cloudsql_operation(
         )
         status = operation.get("status")
         if status == "DONE":
-            logger.info("[wait_cloudsql_operation] Operation '%s' is DONE.", operation_id)
+            logger.info(
+                "[wait_cloudsql_operation] Operation '%s' is DONE.", operation_id
+            )
             # Attach instance details if possible
             service = build("sqladmin", "v1beta4", cache_discovery=False)
             target_resource = operation.get("targetId") or operation.get("targetLink")
             instance_details = None
             instance_name = None
-            if "instance" in (operation.get("operationType", "")).lower() or (target_resource and isinstance(target_resource, str)):
+            if "instance" in (operation.get("operationType", "")).lower() or (
+                target_resource and isinstance(target_resource, str)
+            ):
                 if "instance" in operation:
                     instance_name = operation.get("instance")
                 elif target_resource and isinstance(target_resource, str):
                     instance_name = target_resource.split("/")[-1]
                 if instance_name:
                     try:
-                        instance_details = service.instances().get(project=project_id, instance=instance_name).execute()
+                        instance_details = (
+                            service.instances()
+                            .get(project=project_id, instance=instance_name)
+                            .execute()
+                        )
                     except Exception as exc:
                         logger.warning(
                             "[wait_cloudsql_operation] Could not fetch instance state '%s': %s",
-                            instance_name, str(exc)
+                            instance_name,
+                            str(exc),
                         )
             if instance_details:
                 operation["instance_details"] = instance_details
             return operation
         elapsed += single_wait
         final_operation = operation
-        logger.info("[wait_cloudsql_operation] Partial wait: operation '%s' not done after %ss (total elapsed: %ss)", operation_id, single_wait, elapsed)
+        logger.info(
+            "[wait_cloudsql_operation] Partial wait: operation '%s' not done after %ss (total elapsed: %ss)",
+            operation_id,
+            single_wait,
+            elapsed,
+        )
     # Attach error info if completely timed out
     if final_operation is not None:
         final_operation["error"] = {
             "message": f"Timed out after {timeout} seconds.",
-            "code": "OPERATION_TIMEOUT"
+            "code": "OPERATION_TIMEOUT",
         }
-    return final_operation or {"error": {"message": "Unknown error waiting for operation", "code": "UNKNOWN"}}
+    return final_operation or {
+        "error": {"message": "Unknown error waiting for operation", "code": "UNKNOWN"}
+    }
+
 
 @mcp.tool()
 def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any]:
@@ -440,7 +531,8 @@ def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any
     """
     logger.info(
         "Listing CloudSQL instances for project '%s', region '%s'.",
-        project_id, region,
+        project_id,
+        region,
     )
     if build is None:
         logger.error(
@@ -456,7 +548,8 @@ def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any
     except Exception as exc:
         logger.exception(
             "Failed to list CloudSQL instances for project '%s': %s",
-            project_id, str(exc)
+            project_id,
+            str(exc),
         )
         raise
     else:
@@ -466,11 +559,14 @@ def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any
                 continue
             try:
                 # Use app_name = project_id just for fallback context; not used outside
-                item = GcpCloudSQLItem.build(app_name=project_id, project_id=project_id, instance=inst)
+                item = GcpCloudSQLItem.build(
+                    app_name=project_id, project_id=project_id, instance=inst
+                )
                 items.append(item.asdict())
             except Exception:
                 logger.warning(
-                    "Could not build CloudSQL model: %r", inst,
+                    "Could not build CloudSQL model: %r",
+                    inst,
                     exc_info=True,
                 )
         logger.info("Fetched %d CloudSQL instance records.", len(items))

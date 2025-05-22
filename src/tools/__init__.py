@@ -10,15 +10,28 @@ from .gke import (
     scale_gke_node_pool,
     wait_gke_operation,
 )
-from .metrics import *  # noqa: F403
+from .metrics import get_metric
+from .gce import (
+    get_gce_instance,
+    list_gce_instances,
+    start_gce_instance,
+    stop_gce_instance,
+    wait_gce_operation,
+)
 
 __all__ = [
     "get_cloudsql_instance",
     "list_cloudsql_instances",
-    "list_gke_clusters",
-    "scale_gke_node_pool",
     "start_cloudsql_instance",
     "stop_cloudsql_instance",
     "wait_cloudsql_operation",
+    "list_gke_clusters",
+    "scale_gke_node_pool",
     "wait_gke_operation",
+    "get_metric",
+    "get_gce_instance",
+    "list_gce_instances",
+    "start_gce_instance",
+    "stop_gce_instance",
+    "wait_gce_operation",
 ]
