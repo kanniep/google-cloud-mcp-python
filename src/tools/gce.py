@@ -126,6 +126,7 @@ class GcpComputeInstanceItem:  # Potentially: class GcpComputeInstanceItem(BaseG
                 # "ID": self.instance_data.get("id"),
                 # "Labels": self.instance_data.get("labels", {}),
                 # "Tags": self.instance_data.get("tags", {}).get("items", []),
+
             }
         )
         return instance_info
@@ -151,7 +152,7 @@ def list_gce_instances(
 
     If no zone is specified, instances from all zones in the project will be
     listed. This function provides a summarized view of each instance, similar
-    to the information one might see in the GCP console's instance list.
+    to the information one might see in the GCP console\'s instance list.
 
     Arguments:
         project_id (str): The Google Cloud Project ID where the instances reside.
@@ -311,8 +312,7 @@ def get_gce_instance(
         # TODO: Replace print with proper logging
         print(
             f"GCE instance '{instance_name}' not found in zone '{zone}'"
-            f" in project '{project_id}'."
-        )
+            f" in project '{project_id}'.")
         return instance_dict  # Return empty dict
     except google_exceptions.GoogleAPIError as e:
         # TODO: Replace print with proper logging
@@ -334,207 +334,160 @@ def get_gce_instance(
 
 @mcp.tool()
 def start_gce_instance(
-    project_id: str,
-    zone: str,
-    instance_name: str,
-) -> Dict[str, Any]:
+    project_id: str, zone: str, instance_name: str, wait_for_completion: bool = False
+) -> dict:
     """
-    Starts a stopped Google Compute Engine (GCE) instance.
+    Starts a Google Compute Engine instance.
 
-    This function initiates the process to change the state of a specified GCE
-    instance from 'TERMINATED' to 'RUNNING'. The operation is asynchronous, and
-    this function returns the operation details which can be used to poll for
-    completion using a wait function.
-
-    Arguments:
-        project_id (str): The Google Cloud Project ID where the instance resides.
-                          Example: "my-gcp-project"
-        zone (str): The GCE zone where the instance is located (e.g., "us-central1-a").
-        instance_name (str): The name of the GCE instance to start.
-                             Example: "my-vm-instance"
+    Args:
+        project_id: The Google Cloud Project ID.
+        zone: The GCE zone where the instance is located.
+        instance_name: The name of the GCE instance to start.
+        wait_for_completion: If True, waits for the start operation to complete.
 
     Returns:
-        Dict[str, Any]: A dictionary representing the operation details if the
-                        start request is successful. Returns an empty dictionary
-                        if the instance is not found, is already running, or
-                        in case of an API error. The dictionary typically
-                        includes 'name', 'status', and 'selfLink' of the operation.
-
-    Example:
-        operation_details = start_gce_instance(
-            project_id="your-project-id",
-            zone="us-central1-a",
-            instance_name="my-stopped-vm"
-        )
-        if operation_details:
-            print(f"Start operation initiated: {operation_details.get('name')}")
-            # You might then call a wait function with project_id, zone, and operation_details
-
-    Notes:
-        - Requires the "compute.instances.start" IAM permission on the specified
-          project and instance.
-        - The instance must be in the 'TERMINATED' state to be started. If it's
-          already running, the API might return an error or a completed operation.
-        - This function only *initiates* the start operation. The instance may
-          take some time to reach the 'RUNNING' state. Use a separate wait
-          function to monitor progress.
-        - Starting an instance incurs costs.
-
-    Raises:
-        google.api_core.exceptions.NotFound: If the specified instance does not
-                                            exist.
-        google.api_core.exceptions.Conflict: If the instance is not in a state
-                                             where it can be started (e.g.,
-                                             already running, provisioning).
-        google.api_core.exceptions.GoogleAPIError: If the underlying Google Cloud API
-                                                   call fails for other reasons
-                                                   (authentication, permissions, etc.).
-        # Other exceptions like ConnectionError if network issues occur.
+        A dictionary containing the operation details. If wait_for_completion is True,
+        returns the result of the wait operation.
     """
-    client = compute_v1.InstancesClient()
-    operation_dict: Dict[str, Any] = {}
+    print(
+        f"Initiating start for GCE instance '{instance_name}' in project '{project_id}', zone '{zone}'."
+    )
+    if wait_for_completion:
+        print("Will wait for operation to complete.")
 
+    client = compute_v1.InstancesClient()
     try:
-        # Initiate the start operation
-        operation = client.start(project=project_id, zone=zone, instance=instance_name)
-        # The start method returns a Long-Running Operation (LRO) object
-        # We convert it to a dictionary to return details
-        operation_dict_raw = compute_v1.Operation.to_dict(operation)
-        # For simplicity, returning the raw dict as it contains operation name, status, etc.
-        operation_dict = operation_dict_raw
+        request = compute_v1.StartInstanceRequest(
+            project=project_id, zone=zone, instance=instance_name
+        )
+        operation = client.start(request=request)
+
+        # Check if operation object is returned, even if empty
+        if not operation:
+             return {
+                "error": f"Failed to initiate start operation for instance '{instance_name}'. No operation details returned by API.",
+                "instance_name": instance_name,
+                "action": "start"
+            }
+
+
+        # Attempt to get operation name for waiting or returning
+        operation_name = getattr(operation, 'name', None)
+
+        if wait_for_completion:
+            if operation_name:
+                print(
+                    f"Instance '{instance_name}' start initiated. Waiting for completion (Operation: {operation_name})..."
+                )
+                wait_status_dict = wait_gce_operation(
+                    project_id=project_id, zone=zone, operation_name=operation_name
+                )
+                # Add context about the initial action
+                wait_status_dict["initial_action"] = "start"
+                wait_status_dict["instance_name"] = instance_name
+                wait_status_dict.setdefault("operation_id", operation_name) # Ensure operation ID is in result
+                print(f"Instance '{instance_name}' start operation finished. Final status: {wait_status_dict.get('status')}")
+                return wait_status_dict
+            else:
+                # This case means we got an operation object, but it didn't have a 'name' attribute
+                # which is unexpected for a valid GCE operation.
+                return {
+                    "error": f"Start operation for '{instance_name}' initiated but could not retrieve operation ID from API response.",
+                    "instance_name": instance_name,
+                    "action": "start",
+                    "operation_details": compute_v1.Operation.to_dict(operation) # Provide what we have
+                }
+        else: # Asynchronous: return initial operation details
+            return compute_v1.Operation.to_dict(operation)
 
     except google_exceptions.NotFound:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCE instance '{instance_name}' not found in zone '{zone}'"
-            f" in project '{project_id}'. Cannot start."
-        )
-        return operation_dict
-    except google_exceptions.Conflict:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCE instance '{instance_name}' in zone '{zone}' in project '{project_id}'"
-            f" is not in a state that allows starting."
-        )
-        return operation_dict
-    except google_exceptions.GoogleAPIError as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCP API Error starting GCE instance '{instance_name}' in"
-            f" zone '{zone}' in project '{project_id}': {e}"
-        )
-        return operation_dict
+         print(f"Error starting GCE instance '{instance_name}': Instance not found.")
+         return {
+            "error": f"GCE instance '{instance_name}' not found.",
+            "instance_name": instance_name,
+            "action": "start"
+         }
     except Exception as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"An unexpected error occurred while starting GCE instance"
-            f" '{instance_name}' in zone '{zone}' in project '{project_id}': {e}"
-        )
-        return operation_dict
-
-    return operation_dict
+        print(f"Error during start_gce_instance for '{instance_name}': {e}")
+        return {"error": str(e), "instance_name": instance_name, "action": "start"}
 
 
 @mcp.tool()
 def stop_gce_instance(
-    project_id: str,
-    zone: str,
-    instance_name: str,
-) -> Dict[str, Any]:
-    """Stops a running Google Compute Engine (GCE) instance.
+    project_id: str, zone: str, instance_name: str, wait_for_completion: bool = False
+) -> dict:
+    """
+    Stops a Google Compute Engine instance.
 
-    This function initiates the process to change the state of a specified GCE
-    instance from 'RUNNING' to 'TERMINATED'. The operation is asynchronous, and
-    this function returns the operation details which can be used to poll for
-    completion using a wait function.
-
-    Arguments:
-        project_id (str): The Google Cloud Project ID where the instance resides.
-                          Example: "my-gcp-project"
-        zone (str): The GCE zone where the instance is located (e.g., "us-central1-a").
-        instance_name (str): The name of the GCE instance to stop.
-                             Example: "my-vm-instance"
+    Args:
+        project_id: The Google Cloud Project ID.
+        zone: The GCE zone where the instance is located.
+        instance_name: The name of the GCE instance to stop.
+        wait_for_completion: If True, waits for the stop operation to complete.
 
     Returns:
-        Dict[str, Any]: A dictionary representing the operation details if the
-                        stop request is successful. Returns an empty dictionary
-                        if the instance is not found, is already stopped, or
-                        in case of an API error. The dictionary typically
-                        includes 'name', 'status', and 'selfLink' of the operation.
-
-    Example:
-        operation_details = stop_gce_instance(
-            project_id="your-project-id",
-            zone="us-central1-a",
-            instance_name="my-running-vm"
-        )
-        if operation_details:
-            print(f"Stop operation initiated: {operation_details.get('name')}")
-            # You might then call a wait function with project_id, zone, and operation_details
-
-    Notes:
-        - Requires the "compute.instances.stop" IAM permission on the specified
-          project and instance.
-        - The instance must be in the 'RUNNING' state to be stopped. If it's
-          already stopped, the API might return an error or a completed operation.
-        - This function only *initiates* the stop operation. The instance may
-          take some time to reach the 'TERMINATED' state. Use a separate wait
-          function to monitor progress.
-        - Stopping an instance does not delete it but prevents further charges
-          for CPU and RAM while stopped (disk costs may still apply).
-
-    Raises:
-        google.api_core.exceptions.NotFound: If the specified instance does not
-                                            exist.
-        google.api_core.exceptions.Conflict: If the instance is not in a state
-                                             where it can be stopped (e.g.,
-                                             already stopped, provisioning,
-                                             suspending).
-        google.api_core.exceptions.GoogleAPIError: If the underlying Google Cloud API
-                                                   call fails for other reasons
-                                                   (authentication, permissions, etc.).
-        # Other exceptions like ConnectionError if network issues occur.
+        A dictionary containing the operation details. If wait_for_completion is True,
+        returns the result of the wait operation.
     """
-    client = compute_v1.InstancesClient()
-    operation_dict: Dict[str, Any] = {}
+    print(
+        f"Initiating stop for GCE instance '{instance_name}' in project '{project_id}', zone '{zone}'."
+    )
+    if wait_for_completion:
+        print("Will wait for operation to complete.")
 
+    client = compute_v1.InstancesClient()
     try:
-        # Initiate the stop operation
-        operation = client.stop(project=project_id, zone=zone, instance=instance_name)
-        # The stop method returns a Long-Running Operation (LRO) object
-        operation_dict_raw = compute_v1.Operation.to_dict(operation)
-        operation_dict = operation_dict_raw
+        request = compute_v1.StopInstanceRequest(
+            project=project_id, zone=zone, instance=instance_name
+        )
+        operation = client.stop(request=request)
+
+        if not operation:
+            return {
+                "error": f"Failed to initiate stop operation for instance '{instance_name}'. No operation details returned by API.",
+                "instance_name": instance_name,
+                "action": "stop"
+            }
+
+        operation_name = getattr(operation, 'name', None)
+
+
+        if wait_for_completion:
+            if operation_name:
+                print(
+                    f"Instance '{instance_name}' stop initiated. Waiting for completion (Operation: {operation_name})..."
+                )
+                wait_status_dict = wait_gce_operation(
+                    project_id=project_id, zone=zone, operation_name=operation_name
+                )
+                # Add context about the initial action
+                wait_status_dict["initial_action"] = "stop"
+                wait_status_dict["instance_name"] = instance_name
+                wait_status_dict.setdefault("operation_id", operation_name) # Ensure operation ID is in result
+                print(f"Instance '{instance_name}' stop operation finished. Final status: {wait_status_dict.get('status')}")
+                return wait_status_dict
+            else:
+                 # This case means we got an operation object, but it didn\'t have a 'name' attribute
+                # which is unexpected for a valid GCE operation.
+                return {
+                    "error": f"Stop operation for '{instance_name}' initiated but could not retrieve operation ID from API response.",
+                    "instance_name": instance_name,
+                    "action": "stop",
+                    "operation_details": compute_v1.Operation.to_dict(operation) # Provide what we have
+                }
+        else: # Asynchronous: return initial operation details
+            return compute_v1.Operation.to_dict(operation)
 
     except google_exceptions.NotFound:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCE instance '{instance_name}' not found in zone '{zone}'"
-            f" in project '{project_id}'. Cannot stop."
-        )
-        return operation_dict
-    except google_exceptions.Conflict:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCE instance '{instance_name}' in zone '{zone}' in project '{project_id}'"
-            f" is not in a state that allows stopping."
-        )
-        return operation_dict
-    except google_exceptions.GoogleAPIError as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCP API Error stopping GCE instance '{instance_name}' in"
-            f" zone '{zone}' in project '{project_id}': {e}"
-        )
-        return operation_dict
+        print(f"Error stopping GCE instance '{instance_name}': Instance not found.")
+        return {
+            "error": f"GCE instance '{instance_name}' not found.",
+            "instance_name": instance_name,
+            "action": "stop"
+        }
     except Exception as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"An unexpected error occurred while stopping GCE instance"
-            f" '{instance_name}' in zone '{zone}' in project '{project_id}': {e}"
-        )
-        return operation_dict
-
-    return operation_dict
+        print(f"Error during stop_gce_instance for '{instance_name}': {e}")
+        return {"error": str(e), "instance_name": instance_name, "action": "stop"}
 
 
 @mcp.tool()
@@ -611,8 +564,7 @@ def wait_gce_operation(
         # TODO: Replace print with proper logging
         print(
             f"GCE zone operation '{operation_name}' not found in zone '{zone}'"
-            f" in project '{project_id}'."
-        )
+            f" in project '{project_id}'.")
         return operation_dict
     except google_exceptions.GoogleAPIError as e:
         # TODO: Replace print with proper logging
