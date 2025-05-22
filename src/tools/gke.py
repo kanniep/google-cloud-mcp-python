@@ -1,8 +1,9 @@
+import time
 from typing import Any
 
 from app.mcp import mcp
 from google.cloud import container_v1
-from google.cloud.container_v1.types import SetNodePoolSizeRequest
+from google.cloud.container_v1.types import Operation, SetNodePoolSizeRequest
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -168,3 +169,87 @@ def scale_gke_node_pool(
             "start_time": response.start_time,
             "operation_type": response.operation_type.name,
         }
+
+
+@mcp.tool()
+def wait_gke_operation(
+    project_id: str,
+    location: str,
+    operation_id: str,
+    timeout: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any]:
+    """
+    Waits for a GKE operation to complete.
+
+    Arguments:
+        project_id (str): The Google Cloud project ID.
+        location (str): The Google Cloud location (zone or region).
+        operation_id (str): The ID of the operation to wait for.
+        timeout (int): Maximum number of seconds to wait. Default is 300.
+        poll_interval (int): Interval (in seconds) between polling. Default is 5.
+
+    Returns:
+        dict: Contains status info: 'done' (bool), 'status' (str),
+              'error' (str or None), 'timeout' (bool), 'operation_id' (str).
+    """
+    logger.info(
+        "Waiting for GKE operation '%s' in project '%s', location '%s'.",
+        operation_id,
+        project_id,
+        location,
+    )
+
+    client = container_v1.ClusterManagerClient()
+    parent = f"projects/{project_id}/locations/{location}"
+    start_time = time.time()
+    while True:
+        op: Operation = client.get_operation(
+            name=f"{parent}/operations/{operation_id}",
+        )
+        logger.debug(
+            "Polled operation '%s': status '%s'",
+            operation_id,
+            op.status.name,
+        )
+        if op.status == Operation.Status.DONE:
+            logger.info("Operation '%s' completed successfully.", operation_id)
+            return {
+                "done": True,
+                "operation_id": operation_id,
+                "status": op.status.name,
+                "error": op.error.message if op.error and op.error.message else None,
+                "timeout": False,
+                "project_id": project_id,
+                "location": location,
+            }
+        if op.status == Operation.Status.ABORTING:
+            logger.error(
+                "Operation '%s' finished unsuccessfully: status '%s', error '%s'.",
+                operation_id,
+                op.status.name,
+                op.error.message if op.error else None,
+            )
+            return {
+                "done": False,
+                "operation_id": operation_id,
+                "status": op.status.name,
+                "error": op.error.message if op.error else "Unknown error",
+                "timeout": False,
+                "project_id": project_id,
+                "location": location,
+            }
+
+        if time.time() - start_time > timeout:
+            logger.error("Timed out waiting for operation '%s'.", operation_id)
+            return {
+                "done": False,
+                "operation_id": operation_id,
+                "status": "TIMEOUT",
+                "error": f"Timeout waiting for operation {operation_id}",
+                "timeout": True,
+                "project_id": project_id,
+                "location": location,
+            }
+
+        time.sleep(poll_interval)
