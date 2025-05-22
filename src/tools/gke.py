@@ -2,6 +2,7 @@ from typing import Any
 
 from app.mcp import mcp
 from google.cloud import container_v1
+from google.cloud.container_v1.types import SetNodePoolSizeRequest
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -84,3 +85,86 @@ def list_gke_clusters(project_id: str, location: str = "-") -> dict[str, Any]:
         ]
 
         return {"clusters": clusters}
+
+
+@mcp.tool()
+def scale_gke_node_pool(
+    project_id: str,
+    location: str,  # GKE API uses location (zone or region)
+    cluster_name: str,
+    node_pool_name: str,
+    node_count: int,
+) -> dict[str, Any]:
+    """Scales a GKE node pool to a specified node count.
+
+    Arguments:
+        project_id (str): The Google Cloud project ID.
+        location (str): The Google Cloud location (zone or region) of the cluster.
+        cluster_name (str): The name of the GKE cluster.
+        node_pool_name (str): The name of the node pool to scale.
+        node_count (int): The desired number of nodes in the node pool.
+
+    Returns:
+        dict: A dictionary containing the API response for the scale operation.
+              Note: The response is an Operation object. You might need to
+              poll this operation to check for completion status.
+
+    Example:
+        result = scale_gke_node_pool(
+            project_id="my-gcp-project",
+            location="us-central1-a",
+            cluster_name="my-cluster",
+            node_pool_name="my-node-pool",
+            node_count=5
+        )
+        print(result)
+
+    Notes:
+        - Requires proper Google Cloud GKE permissions to modify node pools.
+
+    Raises:
+        Exception if the API call fails or authentication is invalid.
+    """
+    logger.info(
+        "Scaling node pool '%s' in cluster '%s' to %d nodes in project '%s', location '%s'.",
+        node_pool_name,
+        cluster_name,
+        node_count,
+        project_id,
+        location,
+    )
+
+    try:
+        client = container_v1.ClusterManagerClient()
+        # The API expects the node pool resource name in a specific format
+        # projects/PROJECT_ID/locations/LOCATION/clusters/CLUSTER_NAME/nodePools/NODE_POOL_NAME
+        name = f"projects/{project_id}/locations/{location}/clusters/{cluster_name}/nodePools/{node_pool_name}"
+
+        request = SetNodePoolSizeRequest(
+            name=name,
+            node_count=node_count,
+        )
+
+        response = client.set_node_pool_size(request=request)
+
+    except Exception as e:
+        logger.exception(
+            "Failed to scale node pool '%s' in cluster '%s'. Error: %s",
+            node_pool_name,
+            cluster_name,
+            e,
+        )
+        raise
+    else:
+        logger.info("Node pool scale operation initiated successfully for '%s'.", name)
+
+        return {
+            "operation_id": response.name,
+            "project_id": project_id,
+            "location": location,
+            "cluster_name": cluster_name,
+            "node_pool_name": node_pool_name,
+            "status": response.status.name,
+            "start_time": response.start_time,
+            "operation_type": response.operation_type.name,
+        }
