@@ -9,6 +9,7 @@ dependencies = [
     "google-cloud-monitoring>=2.27.1",
     "google-api-python-client>=2.125.0",
     "mcp[cli]>=1.9.0",
+    "google-cloud-compute>=1.30.0",
 ]
 
 [tool.pyright]

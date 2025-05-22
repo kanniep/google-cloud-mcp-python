@@ -83,7 +83,9 @@ def get_metric(
     """
     logger.info(
         "Fetching metric '%s' for project '%s' over the last %d minutes.",
-        metric_type, project_id, minutes,
+        metric_type,
+        project_id,
+        minutes,
     )
     try:
         client = monitoring_v3.MetricServiceClient()
@@ -97,7 +99,9 @@ def get_metric(
 
         metric_filter = f'metric.type="{metric_type}"'
         if resource_label and resource_label_value:
-            metric_filter += f' AND resource.label.{resource_label}="{resource_label_value}"'
+            metric_filter += (
+                f' AND resource.label.{resource_label}="{resource_label_value}"'
+            )
 
         results = client.list_time_series(
             request={
@@ -114,8 +118,11 @@ def get_metric(
     except Exception as exc:
         logger.exception(
             "Failed to fetch metric '%s' for project '%s'. Exception: %s",
-            metric_type, project_id, str(exc)
+            metric_type,
+            project_id,
+            str(exc),
         )
         raise
+
 
 # Export mcp to be imported and reused by the project entrypoint
