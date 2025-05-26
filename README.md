@@ -8,6 +8,62 @@ The desired transport can be selected via a command-line argument.
 
 ---
 
+## ErrorResponse Guide for Tool Error Handling
+
+All tools should return errors using the shared Pydantic `ErrorResponse` class located in `src/tools/models/error_response.py`. This ensures consistency, reliability, and machine parsability across all interfaces (LLM, UI, automation).
+
+**Model Example:**
+```python
+from pydantic import BaseModel, Field
+from typing import Any
+
+class ErrorResponse(BaseModel):
+    error: str = Field(..., description="Error message string")
+    detail: str | None = Field(
+        None,
+        description="Optional detailed error information (stacktrace, exception repr, etc.)",
+    )
+    context: dict[str, Any] | None = Field(
+        None,
+        description="Optional extra context such as project_id, resource name, etc.",
+    )
+```
+
+**Usage Pattern in Tools:**
+```python
+try:
+    # Tool logic...
+except Exception as exc:
+    return ErrorResponse(
+        error=str(exc),
+        detail=repr(exc),
+        context={
+            "project_id": project_id,
+            "resource": resource_name,
+            # ... add more context as needed ...
+        }
+    ).dict()
+```
+
+**Returned JSON Example:**
+```json
+{
+  "error": "Permission denied while starting instance.",
+  "detail": "google.api_core.exceptions.Forbidden: 403 Permission denied",
+  "context": {
+    "project_id": "gcp-demo",
+    "instance_name": "my-instance"
+  }
+}
+```
+
+**Best Practices:**
+- Always return an `ErrorResponse` (never raise) from tool logic if failure occurs.
+- Provide helpful context for debugging or automated retry.
+- Use the `detail` field for stack traces, exception types, or anything for deeper troubleshooting.
+
+---
+
 ## Features
 
 - 🟢 Modular MCP server (easily add more GCP tools/resources)
