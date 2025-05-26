@@ -15,13 +15,13 @@ Usage:
 
 import logging
 import sys
-from typing import Optional, TextIO
+from typing import TextIO
 
 _LOG_FORMAT = "%(levelname)s:     %(message)s"
 _LOG_LEVEL = logging.INFO
 
 
-def configure_logging(level: int = _LOG_LEVEL, stream: Optional[TextIO] = None) -> None:
+def configure_logging(level: int = _LOG_LEVEL, stream: TextIO | None = None) -> None:
     """
     Configure the root logger and all major lib loggers (uvicorn, mcp) to use a uniform, non-colored output.
     Removes any existing handlers—including those that add color or formatting.
@@ -52,9 +52,7 @@ def configure_logging(level: int = _LOG_LEVEL, stream: Optional[TextIO] = None) 
         logger.propagate = True  # Ensures messages always reach root handler
 
 
-def get_logger(
-    name: Optional[str] = None, level: Optional[int] = None
-) -> logging.Logger:
+def get_logger(name: str | None = None, level: int | None = None) -> logging.Logger:
     """
     Get a logger with project-wide formatting and configuration.
     """

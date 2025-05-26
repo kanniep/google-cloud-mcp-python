@@ -1,12 +1,12 @@
 """Module for representing GCP Compute Engine Instances."""
 
 from datetime import datetime
-from typing import Any, Dict, List
 
 from google.api_core import exceptions as google_exceptions
 from google.cloud import compute_v1
 
 from app.mcp import mcp
+from src.tools.models.error_response import ErrorResponse
 
 # TODO: Consider inheriting from a common BaseGcpItem if one exists/is created.
 # Example: from ...common.gcp_item import BaseGcpItem
@@ -145,7 +145,7 @@ class GcpComputeInstanceItem:  # Potentially: class GcpComputeInstanceItem(BaseG
 def list_gce_instances(
     project_id: str,
     zone: str | None = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict]:
     """
     Lists Google Compute Engine (GCE) instances in a specified project and zone.
 
@@ -201,7 +201,7 @@ def list_gce_instances(
         # Other exceptions like ConnectionError if network issues occur.
     """
     client = compute_v1.InstancesClient()
-    instance_list: List[Dict[str, Any]] = []
+    instance_list: list[dict] = []
 
     try:
         if zone:
@@ -228,13 +228,23 @@ def list_gce_instances(
                         )
                         instance_list.append(item.build())
     except google_exceptions.GoogleAPIError as e:
-        # TODO: Replace print with proper logging using utils.logging.get_logger()
-        print(f"GCP API Error listing GCE instances: {e}")
-        return instance_list  # Return current list on error
+        return [
+            {
+                "error": str(e),
+                "project_id": project_id,
+                "zone": zone or "-",
+                "instances": instance_list,
+            }
+        ]
     except Exception as e:
-        # TODO: Replace print with proper logging
-        print(f"An unexpected error occurred while listing GCE instances: {e}")
-        return instance_list  # Return current list on error
+        return [
+            {
+                "error": str(e),
+                "project_id": project_id,
+                "zone": zone or "-",
+                "instances": instance_list,
+            }
+        ]
 
     return instance_list
 
@@ -244,7 +254,7 @@ def get_gce_instance(
     project_id: str,
     zone: str,
     instance_name: str,
-) -> Dict[str, Any]:
+) -> dict:
     """
     Retrieves detailed information for a specific Google Compute Engine (GCE) instance.
 
@@ -294,7 +304,7 @@ def get_gce_instance(
         # Other exceptions like ConnectionError if network issues occur.
     """
     client = compute_v1.InstancesClient()
-    instance_dict: Dict[str, Any] = {}
+    instance_dict: dict = {}
 
     try:
         # Get the instance resource
@@ -308,26 +318,38 @@ def get_gce_instance(
         instance_dict = item.build()
 
     except google_exceptions.NotFound:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCE instance '{instance_name}' not found in zone '{zone}'"
-            f" in project '{project_id}'."
+        err = ErrorResponse(
+            error=f"GCE instance '{instance_name}' not found in zone '{zone}' in project '{project_id}'.",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "zone": zone,
+                "instance_name": instance_name,
+            },
         )
-        return instance_dict  # Return empty dict
+        return err.dict()
     except google_exceptions.GoogleAPIError as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCP API Error getting GCE instance '{instance_name}' in"
-            f" zone '{zone}' in project '{project_id}': {e}"
+        err = ErrorResponse(
+            error=str(e),
+            detail=repr(e),
+            context={
+                "project_id": project_id,
+                "zone": zone,
+                "instance_name": instance_name,
+            },
         )
-        return instance_dict  # Return empty dict
+        return err.dict()
     except Exception as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"An unexpected error occurred while getting GCE instance"
-            f" '{instance_name}' in zone '{zone}' in project '{project_id}': {e}"
+        err = ErrorResponse(
+            error=str(e),
+            detail=repr(e),
+            context={
+                "project_id": project_id,
+                "zone": zone,
+                "instance_name": instance_name,
+            },
         )
-        return instance_dict  # Return empty dict
+        return err.dict()
 
     return instance_dict
 
@@ -353,12 +375,10 @@ def start_gce_instance(
         returns the result of the wait operation.
     """
     # TODO: Replace print with proper logging using utils.logging.get_logger()
-    print(
-        f"Initiating start for GCE instance '{instance_name}' in project '{project_id}', zone '{zone}'."
-    )
-    if wait_for_completion:
-        print("Will wait for operation to complete.")
-
+    # Optionally: Use logger instead of print
+    # logger.info(
+    #     f"Initiating start for GCE instance '{instance_name}' in project '{project_id}', zone '{zone}'."
+    # )
     client = compute_v1.InstancesClient()
     try:
         request = compute_v1.StartInstanceRequest(
@@ -366,85 +386,85 @@ def start_gce_instance(
         )
         operation = client.start(request=request)
 
-        # The `operation` returned here is a client-side wrapper (_CustomOperation).
-        # Its `name` attribute is the actual GCE operation name.
-        # Check if operation object is returned at all by the client.
         if not operation:
-            # TODO: Replace print with proper logging
-            print(
-                f"Failed to initiate start operation for instance '{instance_name}'. No operation object returned by API client."
+            err = ErrorResponse(
+                error=f"Failed to initiate start operation for instance '{instance_name}'. No operation object returned by API client.",
+                detail=None,
+                context={
+                    "instance_name": instance_name,
+                    "project_id": project_id,
+                    "zone": zone,
+                    "action": "start",
+                },
             )
-            return {
-                "error": f"Failed to initiate start operation for instance '{instance_name}'. No operation object returned by API client.",
-                "instance_name": instance_name,
-                "action": "start",
-            }
+            return err.dict()
 
-        # Get the operation name from the client-side wrapper.
         operation_name = operation.name
 
         if wait_for_completion:
             if operation_name:
-                # TODO: Replace print with proper logging
-                print(
-                    f"Instance '{instance_name}' start initiated. Waiting for completion (Operation: {operation_name})..."
-                )
                 wait_status_dict = wait_gce_operation(
                     project_id=project_id, zone=zone, operation_name=operation_name
                 )
-                # Add context about the initial action
                 wait_status_dict["initial_action"] = "start"
                 wait_status_dict["instance_name"] = instance_name
-                wait_status_dict.setdefault(
-                    "operation_id", operation_name
-                )  # Ensure operation ID is in result
-                # TODO: Replace print with proper logging
-                print(
-                    f"Instance '{instance_name}' start operation finished. Final status: {wait_status_dict.get('status')}"
-                )
+                wait_status_dict.setdefault("operation_id", operation_name)
                 return wait_status_dict
             else:
-                # This case means the client returned an operation wrapper, but it didn't contain a name.
-                # This is highly unexpected for a successful API call that returns an operation.
-                # TODO: Replace print with proper logging
-                print(
-                    f"Start operation for '{instance_name}' initiated but could not retrieve operation ID from client response."
+                err = ErrorResponse(
+                    error=f"Start operation for '{instance_name}' initiated but could not retrieve operation ID from API client response.",
+                    detail=None,
+                    context={
+                        "instance_name": instance_name,
+                        "project_id": project_id,
+                        "zone": zone,
+                        "action": "start",
+                        "operation_details": operation.to_dict()
+                        if hasattr(operation, "to_dict")
+                        else {},
+                    },
                 )
-                return {
-                    "error": f"Start operation for '{instance_name}' initiated but could not retrieve operation ID from API client response.",
-                    "instance_name": instance_name,
-                    "action": "start",
-                    # Attempt to include any info from the wrapper, converting to dict if possible
-                    "operation_details": operation.to_dict(),  # Access nested protobuf if available
-                }
-        else:  # Asynchronous: return initial operation details
-            # Return the details of the operation resource from the wrapper
+                return err.dict()
+        else:
             return operation._operation.to_dict()
 
     except google_exceptions.NotFound:
-        # TODO: Replace print with proper logging
-        print(f"Error starting GCE instance '{instance_name}': Instance not found.")
-        return {
-            "error": f"GCE instance '{instance_name}' not found.",
-            "instance_name": instance_name,
-            "action": "start",
-        }
-    except google_exceptions.GoogleAPIError as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCP API Error starting GCE instance '{instance_name}' in"
-            f" zone '{zone}' in project '{project_id}': {e}"
+        err = ErrorResponse(
+            error=f"GCE instance '{instance_name}' not found.",
+            detail=None,
+            context={
+                "instance_name": instance_name,
+                "project_id": project_id,
+                "zone": zone,
+                "action": "start",
+            },
         )
-        return {
-            "error": f"GCP API error: {e}",
-            "instance_name": instance_name,
-            "action": "start",
-            "google_api_error": str(e),
-        }
+        return err.dict()
+    except google_exceptions.GoogleAPIError as e:
+        err = ErrorResponse(
+            error=f"GCP API error: {e}",
+            detail=repr(e),
+            context={
+                "instance_name": instance_name,
+                "project_id": project_id,
+                "zone": zone,
+                "action": "start",
+                "google_api_error": str(e),
+            },
+        )
+        return err.dict()
     except Exception as e:
-        # TODO: Replace print with proper logging
-        print(f"Error during start_gce_instance for '{instance_name}': {e}")
-        return {"error": str(e), "instance_name": instance_name, "action": "start"}
+        err = ErrorResponse(
+            error=str(e),
+            detail=repr(e),
+            context={
+                "instance_name": instance_name,
+                "project_id": project_id,
+                "zone": zone,
+                "action": "start",
+            },
+        )
+        return err.dict()
 
 
 @mcp.tool()
@@ -464,12 +484,7 @@ def stop_gce_instance(
         A dictionary containing the operation details. If wait_for_completion is True,
         returns the result of the wait operation.
     """
-    print(
-        f"Initiating stop for GCE instance '{instance_name}' in project '{project_id}', zone '{zone}'."
-    )
-    if wait_for_completion:
-        print("Will wait for operation to complete.")
-
+    # Optionally: Use logger instead of print
     client = compute_v1.InstancesClient()
     try:
         request = compute_v1.StopInstanceRequest(
@@ -478,54 +493,69 @@ def stop_gce_instance(
         operation = client.stop(request=request)
 
         if not operation:
-            return {
-                "error": f"Failed to initiate stop operation for instance '{instance_name}'. No operation details returned by API.",
-                "instance_name": instance_name,
-                "action": "stop",
-            }
+            err = ErrorResponse(
+                error=f"Failed to initiate stop operation for instance '{instance_name}'. No operation details returned by API.",
+                detail=None,
+                context={
+                    "instance_name": instance_name,
+                    "project_id": project_id,
+                    "zone": zone,
+                    "action": "stop",
+                },
+            )
+            return err.dict()
 
         operation_name = operation.name
 
         if wait_for_completion:
             if operation_name:
-                print(
-                    f"Instance '{instance_name}' stop initiated. Waiting for completion (Operation: {operation_name})..."
-                )
                 wait_status_dict = wait_gce_operation(
                     project_id=project_id, zone=zone, operation_name=operation_name
                 )
-                # Add context about the initial action
                 wait_status_dict["initial_action"] = "stop"
                 wait_status_dict["instance_name"] = instance_name
-                wait_status_dict.setdefault(
-                    "operation_id", operation_name
-                )  # Ensure operation ID is in result
-                print(
-                    f"Instance '{instance_name}' stop operation finished. Final status: {wait_status_dict.get('status')}"
-                )
+                wait_status_dict.setdefault("operation_id", operation_name)
                 return wait_status_dict
             else:
-                # This case means we got an operation object, but it didn\'t have a 'name' attribute
-                # which is unexpected for a valid GCE operation.
-                return {
-                    "error": f"Stop operation for '{instance_name}' initiated but could not retrieve operation ID from API response.",
-                    "instance_name": instance_name,
-                    "action": "stop",
-                    "operation_name": operation_name,
-                }
-        else:  # Asynchronous: return initial operation details
+                err = ErrorResponse(
+                    error=f"Stop operation for '{instance_name}' initiated but could not retrieve operation ID from API response.",
+                    detail=None,
+                    context={
+                        "instance_name": instance_name,
+                        "project_id": project_id,
+                        "zone": zone,
+                        "action": "stop",
+                        "operation_name": operation_name,
+                    },
+                )
+                return err.dict()
+        else:
             return compute_v1.Operation.to_dict(operation)
 
     except google_exceptions.NotFound:
-        print(f"Error stopping GCE instance '{instance_name}': Instance not found.")
-        return {
-            "error": f"GCE instance '{instance_name}' not found.",
-            "instance_name": instance_name,
-            "action": "stop",
-        }
+        err = ErrorResponse(
+            error=f"GCE instance '{instance_name}' not found.",
+            detail=None,
+            context={
+                "instance_name": instance_name,
+                "project_id": project_id,
+                "zone": zone,
+                "action": "stop",
+            },
+        )
+        return err.dict()
     except Exception as e:
-        print(f"Error during stop_gce_instance for '{instance_name}': {e}")
-        return {"error": str(e), "instance_name": instance_name, "action": "stop"}
+        err = ErrorResponse(
+            error=str(e),
+            detail=repr(e),
+            context={
+                "instance_name": instance_name,
+                "project_id": project_id,
+                "zone": zone,
+                "action": "stop",
+            },
+        )
+        return err.dict()
 
 
 @mcp.tool()
@@ -533,7 +563,7 @@ def wait_gce_operation(
     project_id: str,
     zone: str,
     operation_name: str,
-) -> Dict[str, Any]:
+) -> dict:
     """Waits for a Google Compute Engine (GCE) zone-specific operation to complete.
 
     GCE operations like starting or stopping an instance are asynchronous. This
@@ -589,7 +619,7 @@ def wait_gce_operation(
     """
     # Use ZoneOperationsClient for zone-specific operations
     client = compute_v1.ZoneOperationsClient()
-    operation_dict: Dict[str, Any] = {}
+    operation_dict: dict = {}
 
     try:
         # The wait method polls the operation until it completes or times out (default 1 hour)
@@ -599,25 +629,37 @@ def wait_gce_operation(
         operation_dict = operation_dict_raw
 
     except google_exceptions.NotFound:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCE zone operation '{operation_name}' not found in zone '{zone}'"
-            f" in project '{project_id}'."
+        err = ErrorResponse(
+            error=f"GCE zone operation '{operation_name}' not found in zone '{zone}' in project '{project_id}'.",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "zone": zone,
+                "operation_name": operation_name,
+            },
         )
-        return operation_dict
+        return err.dict()
     except google_exceptions.GoogleAPIError as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"GCP API Error waiting for GCE zone operation '{operation_name}' in"
-            f" zone '{zone}' in project '{project_id}': {e}"
+        err = ErrorResponse(
+            error=str(e),
+            detail=repr(e),
+            context={
+                "project_id": project_id,
+                "zone": zone,
+                "operation_name": operation_name,
+            },
         )
-        return operation_dict
+        return err.dict()
     except Exception as e:
-        # TODO: Replace print with proper logging
-        print(
-            f"An unexpected error occurred while waiting for GCE zone operation"
-            f" '{operation_name}' in zone '{zone}' in project '{project_id}': {e}"
+        err = ErrorResponse(
+            error=str(e),
+            detail=repr(e),
+            context={
+                "project_id": project_id,
+                "zone": zone,
+                "operation_name": operation_name,
+            },
         )
-        return operation_dict
+        return err.dict()
 
     return operation_dict

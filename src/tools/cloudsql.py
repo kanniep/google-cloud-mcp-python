@@ -1,10 +1,11 @@
-from typing import Any
 import time
-
-from app.mcp import mcp
-from utils.logging import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
+
+from app.mcp import mcp
+from src.tools.models.error_response import ErrorResponse
+from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -157,7 +158,16 @@ def start_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, An
     )
     if build is None:
         logger.error("google-api-python-client package not installed")
-        raise ImportError("google-api-python-client package not installed")
+        err = ErrorResponse(
+            error="google-api-python-client package not installed",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "instance_name": instance_name,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
     try:
         service = build("sqladmin", "v1beta4", cache_discovery=False)
         # Fetch the current instance config
@@ -193,7 +203,16 @@ def start_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, An
             project_id,
             str(exc),
         )
-        raise
+        err = ErrorResponse(
+            error=str(exc),
+            detail=repr(exc),
+            context={
+                "project_id": project_id,
+                "instance_name": instance_name,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
 
 
 @mcp.tool()
@@ -234,7 +253,16 @@ def stop_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any
     )
     if build is None:
         logger.error("google-api-python-client package not installed")
-        raise ImportError("google-api-python-client package not installed")
+        err = ErrorResponse(
+            error="google-api-python-client package not installed",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "instance_name": instance_name,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
     try:
         service = build("sqladmin", "v1beta4", cache_discovery=False)
         # Fetch the current instance config
@@ -270,7 +298,17 @@ def stop_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any
             project_id,
             str(exc),
         )
-        raise
+        err = ErrorResponse(
+            error=str(exc),
+            detail=repr(exc),
+            context={
+                "project_id": project_id,
+                "instance_name": instance_name,
+                "operation": None,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
 
 
 @mcp.tool()
@@ -305,7 +343,16 @@ def get_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]
     )
     if build is None:
         logger.error("google-api-python-client package not installed")
-        raise ImportError("google-api-python-client package not installed")
+        err = ErrorResponse(
+            error="google-api-python-client package not installed",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "instance_name": instance_name,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
 
     try:
         service = build("sqladmin", "v1beta4", cache_discovery=False)
@@ -323,7 +370,16 @@ def get_cloudsql_instance(project_id: str, instance_name: str) -> dict[str, Any]
             project_id,
             str(exc),
         )
-        raise
+        err = ErrorResponse(
+            error=str(exc),
+            detail=repr(exc),
+            context={
+                "project_id": project_id,
+                "instance_name": instance_name,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
 
 
 def _wait_cloudsql_operation_single(
@@ -340,7 +396,15 @@ def _wait_cloudsql_operation_single(
     log = logger_obj or logger
     if build is None:
         log.error("google-api-python-client package not installed")
-        raise ImportError("google-api-python-client package not installed")
+        err = ErrorResponse(
+            error="google-api-python-client package not installed",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "operation_id": operation_id,
+            },
+        )
+        return err.dict()
     service = build("sqladmin", "v1beta4", cache_discovery=False)
     start_time = time.time()
     while True:
@@ -372,7 +436,15 @@ def _wait_cloudsql_operation_single(
                 project_id,
                 str(exc),
             )
-            raise
+            err = ErrorResponse(
+                error=str(exc),
+                detail=repr(exc),
+                context={
+                    "project_id": project_id,
+                    "operation_id": operation_id,
+                },
+            )
+            return err.dict()
 
 
 @mcp.tool()
@@ -417,7 +489,16 @@ def wait_cloudsql_operation(
     )
     if build is None:
         logger.error("google-api-python-client package not installed")
-        raise ImportError("google-api-python-client package not installed")
+        err = ErrorResponse(
+            error="google-api-python-client package not installed",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "operation_id": operation_id,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
     per_call_timeout = min(60, timeout)
     elapsed = 0
     final_operation = None
@@ -432,6 +513,14 @@ def wait_cloudsql_operation(
             timeout=single_wait,
             logger_obj=logger,
         )
+        # Handle if operation is an error dict
+        if isinstance(operation, dict) and "error" in operation:
+            operation["timeout"] = False
+            operation["project_id"] = project_id
+            operation["operation_id"] = operation_id
+            operation["status"] = "ERROR"
+            return operation
+
         status = operation.get("status")
         if status == "DONE":
             logger.info(
@@ -475,13 +564,27 @@ def wait_cloudsql_operation(
         )
     # Attach error info if completely timed out
     if final_operation is not None:
-        final_operation["error"] = {
-            "message": f"Timed out after {timeout} seconds.",
-            "code": "OPERATION_TIMEOUT",
-        }
-    return final_operation or {
-        "error": {"message": "Unknown error waiting for operation", "code": "UNKNOWN"}
-    }
+        if "error" not in final_operation:
+            final_operation["error"] = {
+                "message": f"Timed out after {timeout} seconds.",
+                "code": "OPERATION_TIMEOUT",
+            }
+        final_operation["timeout"] = True
+        final_operation["project_id"] = project_id
+        final_operation["operation_id"] = operation_id
+        final_operation["status"] = "TIMEOUT"
+        return final_operation
+
+    err = ErrorResponse(
+        error="Unknown error waiting for operation",
+        detail=f"project_id={project_id}, operation_id={operation_id}",
+        context={
+            "project_id": project_id,
+            "operation_id": operation_id,
+            "status": "ERROR",
+        },
+    )
+    return err.dict()
 
 
 @mcp.tool()
@@ -538,7 +641,16 @@ def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any
         logger.error(
             "google-api-python-client is not installed. Please install it to use this tool."
         )
-        raise ImportError("google-api-python-client package not installed")
+        err = ErrorResponse(
+            error="google-api-python-client package not installed",
+            detail=None,
+            context={
+                "project_id": project_id,
+                "region": region,
+                "status": "ERROR",
+            },
+        )
+        return err.dict()
 
     try:
         service = build("sqladmin", "v1beta4", cache_discovery=False)
@@ -551,7 +663,12 @@ def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any
             project_id,
             str(exc),
         )
-        raise
+        err = ErrorResponse(
+            error=str(exc),
+            detail=repr(exc),
+            context={"project_id": project_id, "region": region, "status": "ERROR"},
+        )
+        return err.dict()
     else:
         items = []
         for inst in all_instances:
@@ -563,11 +680,17 @@ def list_cloudsql_instances(project_id: str, region: str = "-") -> dict[str, Any
                     app_name=project_id, project_id=project_id, instance=inst
                 )
                 items.append(item.asdict())
-            except Exception:
+            except Exception as exc2:
                 logger.warning(
                     "Could not build CloudSQL model: %r",
                     inst,
                     exc_info=True,
                 )
+                err = ErrorResponse(
+                    error=f"Could not build CloudSQL model: {str(exc2)}",
+                    detail=repr(exc2),
+                    context={"instance_raw": inst},
+                )
+                items.append(err.dict())
         logger.info("Fetched %d CloudSQL instance records.", len(items))
         return {"instances": items}

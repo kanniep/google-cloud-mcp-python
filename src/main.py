@@ -1,8 +1,8 @@
 import argparse
+
 import tools
 from app.mcp import mcp
 from utils.logging import configure_logging, get_logger
-
 
 __all__ = ["tools"]
 
