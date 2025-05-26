@@ -6,7 +6,7 @@ from google.api_core import exceptions as google_exceptions
 from google.cloud import compute_v1
 
 from app.mcp import mcp
-from src.tools.models.error_response import ErrorResponse
+from tools.models.error_response import ErrorResponse
 
 # TODO: Consider inheriting from a common BaseGcpItem if one exists/is created.
 # Example: from ...common.gcp_item import BaseGcpItem

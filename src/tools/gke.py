@@ -5,7 +5,7 @@ from google.cloud import container_v1
 from google.cloud.container_v1.types import Operation, SetNodePoolSizeRequest
 
 from app.mcp import mcp
-from src.tools.models.error_response import ErrorResponse
+from tools.models.error_response import ErrorResponse
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

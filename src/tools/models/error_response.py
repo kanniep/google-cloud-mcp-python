@@ -15,7 +15,7 @@ class ErrorResponse(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "error": "Permission denied while starting instance.",
                 "detail": "google.api_core.exceptions.Forbidden: 403 Permission denied",

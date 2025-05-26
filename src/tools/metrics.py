@@ -4,7 +4,7 @@ from google.cloud import monitoring_v3
 from google.protobuf.json_format import MessageToDict
 
 from app.mcp import mcp  # Import the shared FastMCP instance from central app package
-from src.tools.models.error_response import ErrorResponse
+from tools.models.error_response import ErrorResponse
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
