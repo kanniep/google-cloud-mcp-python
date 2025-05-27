@@ -1,13 +1,13 @@
 import time
-from typing import Dict, Any
 
 from google.cloud import monitoring_v3
-from utils.logging import get_logger
 from google.protobuf.json_format import MessageToDict
 
-logger = get_logger(__name__)
-
 from app.mcp import mcp  # Import the shared FastMCP instance from central app package
+from tools.models.error_response import ErrorResponse
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @mcp.tool()
@@ -17,7 +17,7 @@ def get_metric(
     minutes: int = 5,
     resource_label: str | None = None,
     resource_label_value: str | None = None,
-) -> Dict[str, Any]:
+) -> dict:
     """
     Retrieve recent metric time series data from Google Cloud Monitoring (Stackdriver).
 
@@ -122,7 +122,18 @@ def get_metric(
             project_id,
             str(exc),
         )
-        raise
+        err = ErrorResponse(
+            error=str(exc),
+            detail=repr(exc),
+            context={
+                "project_id": project_id,
+                "metric_type": metric_type,
+                "minutes": minutes,
+                "resource_label": resource_label,
+                "resource_label_value": resource_label_value,
+            },
+        )
+        return err.dict()
 
 
 # Export mcp to be imported and reused by the project entrypoint

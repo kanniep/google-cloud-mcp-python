@@ -5,12 +5,6 @@ from .cloudsql import (
     stop_cloudsql_instance,
     wait_cloudsql_operation,
 )
-from .gke import (
-    list_gke_clusters,
-    scale_gke_node_pool,
-    wait_gke_operation,
-)
-from .metrics import get_metric
 from .gce import (
     get_gce_instance,
     list_gce_instances,
@@ -18,6 +12,12 @@ from .gce import (
     stop_gce_instance,
     wait_gce_operation,
 )
+from .gke import (
+    list_gke_clusters,
+    scale_gke_node_pool,
+    wait_gke_operation,
+)
+from .metrics import get_metric
 
 __all__ = [
     "get_cloudsql_instance",
